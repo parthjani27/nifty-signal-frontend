@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback } from "react";
+import React, { useEffect, useRef, useCallback, useState } from "react";
 import { createChart } from "lightweight-charts";
 
 const API_URL = "https://niftysignal-backend.onrender.com";
@@ -157,8 +157,9 @@ const ChartComponent = ({ symbol, timeframe, onSignal }) => {
   const mountedRef   = useRef(false);
   const fittedRef    = useRef(false);
   const lastSigRef   = useRef(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const fetchCandles = useCallback(async () => {
+  const fetchCandles = useCallback(async (resetView = false) => {
     if (!mountedRef.current || !chartRef.current) return;
     try {
       const res = await fetch(`${API_URL}/chart-data/${symbol}/${timeframe}`);
@@ -206,9 +207,18 @@ const ChartComponent = ({ symbol, timeframe, onSignal }) => {
           });
         }
       }
-      if (!fittedRef.current) { chartRef.current?.timeScale().fitContent(); fittedRef.current = true; }
+      if (!fittedRef.current || resetView) {
+        chartRef.current?.timeScale().fitContent();
+        fittedRef.current = true;
+      }
     } catch (err) { console.error("Fetch error:", err); }
   }, [symbol, timeframe, onSignal]);
+
+  const handleManualRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    await fetchCandles(true);
+    setTimeout(() => setIsRefreshing(false), 500);
+  }, [fetchCandles]);
 
   useEffect(() => {
     mountedRef.current = true; fittedRef.current = false;
@@ -230,7 +240,7 @@ const ChartComponent = ({ symbol, timeframe, onSignal }) => {
     ema26Ref.current = chart.addLineSeries({ color: "#ff9f43", lineWidth: 2, title: "EMA 26", priceLineVisible: false, lastValueVisible: true });
     vwapRef.current  = chart.addLineSeries({ color: "#c084fc", lineWidth: 1, lineStyle: 2, title: "VWAP", priceLineVisible: false, lastValueVisible: true });
     fetchCandles();
-    intervalRef.current = setInterval(fetchCandles, 5000);
+    intervalRef.current = setInterval(() => fetchCandles(false), 5000);
     const onResize = () => { if (chartRef.current && containerRef.current) chartRef.current.applyOptions({ width: containerRef.current.clientWidth }); };
     window.addEventListener("resize", onResize);
     return () => {
@@ -240,9 +250,29 @@ const ChartComponent = ({ symbol, timeframe, onSignal }) => {
     };
   }, [symbol, timeframe]);
 
-  useEffect(() => { if (mountedRef.current) fetchCandles(); }, [fetchCandles]);
+  useEffect(() => { if (mountedRef.current) fetchCandles(false); }, [fetchCandles]);
 
-  return <div ref={containerRef} style={{ width: "100%", height: "100%", minHeight: "420px" }} />;
+  return (
+    <div style={{ width: "100%", height: "100%", minHeight: "420px", position: "relative" }}>
+      <button
+        onClick={handleManualRefresh}
+        disabled={isRefreshing}
+        title="Refresh chart"
+        style={{
+          position: "absolute", top: 8, right: 8, zIndex: 10,
+          width: 32, height: 32, borderRadius: 6,
+          background: "rgba(20,26,42,0.85)", border: "1px solid rgba(100,120,180,0.3)",
+          color: "#8892b0", cursor: isRefreshing ? "default" : "pointer",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 16, transition: "transform 0.4s ease",
+          transform: isRefreshing ? "rotate(360deg)" : "rotate(0deg)",
+        }}
+      >
+        ⟳
+      </button>
+      <div ref={containerRef} style={{ width: "100%", height: "100%", minHeight: "420px" }} />
+    </div>
+  );
 };
 
 export default ChartComponent;

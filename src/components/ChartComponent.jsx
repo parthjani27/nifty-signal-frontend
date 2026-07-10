@@ -146,6 +146,24 @@ const detectCrossovers = (formatted, ema9, ema26, atr, adx, vwap) => {
   return signals;
 };
 
+// Returns the time range covering just the most recent trading day's candles,
+// with a little breathing room on the right so the last candle isn't glued
+// to the edge — this mimics TradingView's default "latest session" view
+// instead of zooming out to show every day of history at once.
+const getLastDayRange = (formatted) => {
+  if (!formatted.length) return null;
+  const lastTime = formatted[formatted.length - 1].time;
+  const lastDayKey = new Date(lastTime * 1000).toISOString().slice(0, 10);
+  const dayCandles = formatted.filter(
+    (d) => new Date(d.time * 1000).toISOString().slice(0, 10) === lastDayKey
+  );
+  if (!dayCandles.length) return null;
+  const from = dayCandles[0].time;
+  const to = dayCandles[dayCandles.length - 1].time;
+  const step = formatted.length > 1 ? formatted[1].time - formatted[0].time : 300;
+  return { from, to: to + step * 8 };
+};
+
 const ChartComponent = ({ symbol, timeframe, onSignal }) => {
   const containerRef = useRef(null);
   const chartRef     = useRef(null);
@@ -207,8 +225,14 @@ const ChartComponent = ({ symbol, timeframe, onSignal }) => {
           });
         }
       }
+
       if (!fittedRef.current || resetView) {
-        chartRef.current?.timeScale().fitContent();
+        const range = getLastDayRange(formatted);
+        if (range) {
+          chartRef.current?.timeScale().setVisibleRange(range);
+        } else {
+          chartRef.current?.timeScale().fitContent();
+        }
         fittedRef.current = true;
       }
     } catch (err) { console.error("Fetch error:", err); }

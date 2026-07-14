@@ -146,10 +146,6 @@ const detectCrossovers = (formatted, ema9, ema26, atr, adx, vwap) => {
   return signals;
 };
 
-// Returns the time range covering just the most recent trading day's candles,
-// with a little breathing room on the right so the last candle isn't glued
-// to the edge — this mimics TradingView's default "latest session" view
-// instead of zooming out to show every day of history at once.
 const getLastDayRange = (formatted) => {
   if (!formatted.length) return null;
   const lastTime = formatted[formatted.length - 1].time;
@@ -176,6 +172,7 @@ const ChartComponent = ({ symbol, timeframe, onSignal }) => {
   const fittedRef    = useRef(false);
   const lastSigRef   = useRef(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [status, setStatus] = useState(null); // { adx, isTrending, price, vwap, aboveVwap }
 
   const fetchCandles = useCallback(async (resetView = false) => {
     if (!mountedRef.current || !chartRef.current) return;
@@ -203,6 +200,22 @@ const ChartComponent = ({ symbol, timeframe, onSignal }) => {
       ema9Ref.current?.setData(ema9);
       ema26Ref.current?.setData(ema26);
       vwapRef.current?.setData(formatted.map((d, idx) => ({ time: d.time, value: vwap[idx] })).filter(d => d.value != null));
+
+      // Live status readout — shows current ADX/VWAP so filtered-out
+      // crossovers aren't a silent black box.
+      const lastIdx = formatted.length - 1;
+      const lastAdx = adx[lastIdx];
+      const lastVwap = vwap[lastIdx];
+      const lastPrice = formatted[lastIdx].close;
+      if (lastAdx != null && lastVwap != null) {
+        setStatus({
+          adx: lastAdx.toFixed(1),
+          isTrending: lastAdx > ADX_THRESHOLD,
+          price: lastPrice,
+          vwap: lastVwap.toFixed(2),
+          aboveVwap: lastPrice > lastVwap,
+        });
+      }
 
       const signals = detectCrossovers(formatted, ema9, ema26, atr, adx, vwap);
       candleRef.current?.setMarkers(signals.map(s => ({
@@ -278,6 +291,30 @@ const ChartComponent = ({ symbol, timeframe, onSignal }) => {
 
   return (
     <div style={{ width: "100%", height: "100%", minHeight: "420px", position: "relative" }}>
+      {status && (
+        <div style={{
+          position: "absolute", top: 8, left: 8, zIndex: 10,
+          background: "rgba(20,26,42,0.85)", border: "1px solid rgba(100,120,180,0.3)",
+          borderRadius: 6, padding: "6px 10px", fontSize: 11,
+          fontFamily: "'JetBrains Mono', monospace", color: "#8892b0",
+          display: "flex", gap: 12, alignItems: "center",
+        }}>
+          <span>
+            ADX <b style={{ color: status.isTrending ? "#00e5a0" : "#ff4560" }}>{status.adx}</b>
+            {" "}
+            <span style={{ color: status.isTrending ? "#00e5a0" : "#ff4560" }}>
+              ({status.isTrending ? "Trending" : "Choppy — need >20"})
+            </span>
+          </span>
+          <span>
+            VWAP <b style={{ color: "#c084fc" }}>{status.vwap}</b>
+            {" "}
+            <span style={{ color: status.aboveVwap ? "#00e5a0" : "#ff4560" }}>
+              (Price {status.aboveVwap ? "Above ↑" : "Below ↓"})
+            </span>
+          </span>
+        </div>
+      )}
       <button
         onClick={handleManualRefresh}
         disabled={isRefreshing}
